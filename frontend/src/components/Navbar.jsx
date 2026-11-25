@@ -48,6 +48,9 @@ export default function Navbar() {
           <NavLink to="/calendar" className={linkClass}>
             Calendar
           </NavLink>
+          <NavLink to="/settings" className={linkClass}>
+            Settings
+          </NavLink>
         </nav>
         <div className="ml-auto flex items-center gap-3">
           {permission === 'default' && (

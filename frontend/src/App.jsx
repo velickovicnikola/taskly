@@ -10,6 +10,7 @@ import Dashboard from './pages/Dashboard';
 import Boards from './pages/Boards';
 import Board from './pages/Board';
 import Calendar from './pages/Calendar';
+import Settings from './pages/Settings';
 
 function App() {
   const dispatch = useDispatch();
@@ -60,6 +61,14 @@ function App() {
         element={
           <ProtectedRoute>
             <Calendar />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/settings"
+        element={
+          <ProtectedRoute>
+            <Settings />
           </ProtectedRoute>
         }
       />

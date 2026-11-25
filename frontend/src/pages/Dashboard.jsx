@@ -81,7 +81,15 @@ function DonutChart({ data }) {
 
   return (
     <svg viewBox="0 0 100 100" className="w-36 h-36 -rotate-90">
-      <circle cx="50" cy="50" r={radius} fill="none" stroke="#e2e8f0" strokeWidth="16" />
+      <circle
+        cx="50"
+        cy="50"
+        r={radius}
+        fill="none"
+        stroke="currentColor"
+        className="text-slate-200"
+        strokeWidth="16"
+      />
       {segments.map((s) => (
         <circle
           key={s.label}
