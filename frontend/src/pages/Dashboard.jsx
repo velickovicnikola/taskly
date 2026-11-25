@@ -3,6 +3,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { fetchDashboard, addTask, updateTask, deleteTask } from '../store/tasksSlice';
 import Navbar from '../components/Navbar';
 import TaskModal from '../components/TaskModal';
+import { TASK_COLORS } from '../colors';
 
 // 'YYYY-MM-DD' for today in the user's local timezone
 const today = () => new Date().toLocaleDateString('sv-SE');
@@ -221,8 +222,12 @@ export default function Dashboard() {
                   const overdue = !done && task.due_date && task.due_date < todayStr;
                   return (
                     
-                    <li key={task.id} className="flex items-center gap-3 py-2.5">
-
+                    <li
+                      key={task.id}
+                      className={`flex items-center gap-3 py-2.5 px-2 -mx-2 rounded-lg ${
+                        task.color ? TASK_COLORS[task.color].tint : ''
+                      }`}
+                    >
                       <input
                         type="checkbox"
                         checked={done}
