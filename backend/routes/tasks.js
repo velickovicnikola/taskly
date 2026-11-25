@@ -9,6 +9,8 @@ const STATUSES = ['todo', 'in_progress', 'completed'];
 const PRIORITIES = ['low', 'medium', 'high'];
 const COLORS = ['red', 'orange', 'amber', 'green', 'blue', 'purple', 'pink'];
 const UPDATABLE_FIELDS = ['title', 'description', 'status', 'priority', 'due_date', 'list_id', 'color'];
+// Default list names that match each status (compared in lowercase)
+const LIST_TITLE_BY_STATUS = { todo: 'to do', in_progress: 'in progress', completed: 'done' };
 
 
 // GET /api/tasks?status=todo&priority=high&list_id=1
@@ -214,9 +216,32 @@ router.put('/:id', async (req, res) => {
     return res.status(400).json({ message: 'Nothing to update' });
   }
 
-  params.push(req.params.id, req.userId);
-
   try {
+    // Changing the status also moves the task to the matching list on its board
+    if (has('status') && !has('list_id')) {
+      const target = await pool.query(
+        `SELECT l2.id,
+           COALESCE((SELECT MAX(position) + 1 FROM tasks WHERE list_id = l2.id), 0) AS next_position
+         FROM tasks t
+         JOIN lists l ON t.list_id = l.id
+         JOIN lists l2 ON l2.board_id = l.board_id
+         WHERE t.id = $1 AND t.user_id = $2
+           AND LOWER(TRIM(l2.title)) = $3
+           AND l2.id <> l.id
+         LIMIT 1`,
+        [req.params.id, req.userId, LIST_TITLE_BY_STATUS[body.status]]
+      );
+
+      if (target.rows.length > 0) {
+        params.push(target.rows[0].id);
+        sets.push(`list_id = $${params.length}`);
+        params.push(target.rows[0].next_position);
+        sets.push(`position = $${params.length}`);
+      }
+    }
+
+    params.push(req.params.id, req.userId);
+
     const result = await pool.query(
       `UPDATE tasks SET ${sets.join(', ')}
        WHERE id = $${params.length - 1} AND user_id = $${params.length}
