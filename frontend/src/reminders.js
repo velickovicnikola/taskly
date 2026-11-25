@@ -1,10 +1,29 @@
 import { api } from './api';
 
+const STORAGE_KEY = 'taskly_reminders';
 const todayKey = () => new Date().toLocaleDateString('sv-SE');
+
+// Reminders are on unless the user switched them off inside the app
+export function remindersEnabled() {
+  try {
+    return localStorage.getItem(STORAGE_KEY) !== 'off';
+  } catch {
+    return true;
+  }
+}
+
+export function setRemindersEnabled(enabled) {
+  try {
+    localStorage.setItem(STORAGE_KEY, enabled ? 'on' : 'off');
+  } catch {
+    // storage not available, ignore
+  }
+}
 
 // Shows browser notifications for tasks due today and overdue tasks
 export async function checkReminders() {
   if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+  if (!remindersEnabled()) return;
 
   try {
     const { tasks } = await api('/tasks');

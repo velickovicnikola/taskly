@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { logoutUser } from '../store/authSlice';
-import { checkReminders } from '../reminders';
+import { checkReminders, remindersEnabled, setRemindersEnabled } from '../reminders';
 
 export default function Navbar() {
   const dispatch = useDispatch();
@@ -10,11 +10,25 @@ export default function Navbar() {
 
   const supported = typeof Notification !== 'undefined';
   const [permission, setPermission] = useState(supported ? Notification.permission : 'unsupported');
+  const [enabled, setEnabled] = useState(remindersEnabled());
 
+  // First time: ask the browser for permission
   async function enableReminders() {
     const result = await Notification.requestPermission();
     setPermission(result);
-    if (result === 'granted') checkReminders();
+    if (result === 'granted') {
+      setRemindersEnabled(true);
+      setEnabled(true);
+      checkReminders();
+    }
+  }
+
+  // Afterwards: switch reminders on and off inside the app
+  function toggleReminders() {
+    const next = !enabled;
+    setRemindersEnabled(next);
+    setEnabled(next);
+    if (next) checkReminders();
   }
 
   const linkClass = ({ isActive }) =>
@@ -44,7 +58,27 @@ export default function Navbar() {
               Enable reminders
             </button>
           )}
-          {permission === 'granted' && <span className="text-xs text-emerald-600">Reminders on</span>}
+          {permission === 'granted' && (
+            <button
+              onClick={toggleReminders}
+              className={`text-xs rounded-lg border px-2.5 py-1 ${
+                enabled
+                  ? 'border-emerald-600 text-emerald-700 hover:bg-emerald-50'
+                  : 'border-slate-300 text-slate-500 hover:bg-slate-50'
+              }`}
+              title="Click to turn reminders on or off"
+            >
+              Reminders: {enabled ? 'On' : 'Off'}
+            </button>
+          )}
+          {permission === 'denied' && (
+            <span
+              className="text-xs text-slate-400"
+              title="Allow notifications for this site in your browser settings (lock icon next to the address)"
+            >
+              Reminders blocked by browser
+            </span>
+          )}
           <span className="text-sm text-slate-500">{user?.name}</span>
           <button
             onClick={() => dispatch(logoutUser())}
