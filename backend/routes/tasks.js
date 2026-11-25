@@ -7,6 +7,9 @@ router.use(auth); // every route below requires a valid token
 
 const STATUSES = ['todo', 'in_progress', 'completed'];
 const PRIORITIES = ['low', 'medium', 'high'];
+const COLORS = ['red', 'orange', 'amber', 'green', 'blue', 'purple', 'pink'];
+const UPDATABLE_FIELDS = ['title', 'description', 'status', 'priority', 'due_date', 'list_id', 'color'];
+
 
 // GET /api/tasks?status=todo&priority=high&list_id=1
 router.get('/', async (req, res) => {
@@ -177,29 +180,48 @@ router.put('/:id/move', async (req, res) => {
   }
 });
 
-// PUT /api/tasks/:id (partial update, only sent fields change)
+// PUT /api/tasks/:id (partial update: only the fields that are sent change)
 router.put('/:id', async (req, res) => {
-  const { title, description, status, priority, due_date, list_id } = req.body;
+  const body = req.body;
+  const has = (field) => Object.prototype.hasOwnProperty.call(body, field);
 
-  if (status && !STATUSES.includes(status)) {
+  if (has('title') && (typeof body.title !== 'string' || !body.title.trim())) {
+    return res.status(400).json({ message: 'Title cannot be empty' });
+  }
+  if (has('status') && !STATUSES.includes(body.status)) {
     return res.status(400).json({ message: 'Invalid status' });
   }
-  if (priority && !PRIORITIES.includes(priority)) {
+  if (has('priority') && !PRIORITIES.includes(body.priority)) {
     return res.status(400).json({ message: 'Invalid priority' });
   }
+  if (has('color') && body.color !== null && !COLORS.includes(body.color)) {
+    return res.status(400).json({ message: 'Invalid color' });
+  }
+
+  // Field names come from the whitelist above, values are always passed as parameters
+  const sets = [];
+  const params = [];
+  for (const field of UPDATABLE_FIELDS) {
+    if (!has(field)) continue;
+    let value = body[field];
+    if (field === 'title') value = value.trim();
+    if (value === '') value = null; // an empty value clears the field (e.g. due date)
+    params.push(value);
+    sets.push(`${field} = $${params.length}`);
+  }
+
+  if (sets.length === 0) {
+    return res.status(400).json({ message: 'Nothing to update' });
+  }
+
+  params.push(req.params.id, req.userId);
 
   try {
     const result = await pool.query(
-      `UPDATE tasks SET
-         title = COALESCE($1, title),
-         description = COALESCE($2, description),
-         status = COALESCE($3, status),
-         priority = COALESCE($4, priority),
-         due_date = COALESCE($5, due_date),
-         list_id = COALESCE($6, list_id)
-       WHERE id = $7 AND user_id = $8
+      `UPDATE tasks SET ${sets.join(', ')}
+       WHERE id = $${params.length - 1} AND user_id = $${params.length}
        RETURNING *`,
-      [title, description, status, priority, due_date, list_id, req.params.id, req.userId]
+      params
     );
 
     if (result.rows.length === 0) {

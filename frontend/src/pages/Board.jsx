@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { api } from '../api';
 import Navbar from '../components/Navbar';
 import TaskModal from '../components/TaskModal';
+import { TASK_COLORS } from '../colors';
 
 // Moving a task into a list with one of these names also updates its status
 const STATUS_BY_LIST = {
@@ -111,9 +112,9 @@ function Column({
                   onDragStart(task.id);
                 }}
                 onDragEnd={onDragEnd}
-                className={`bg-white rounded-xl shadow-sm p-3 space-y-2 cursor-grab active:cursor-grabbing ${
-                  isDragged ? 'opacity-40' : ''
-                }`}
+                className={`bg-white rounded-xl shadow-sm p-3 space-y-2 cursor-grab active:cursor-grabbing border-l-4 ${
+                  task.color ? TASK_COLORS[task.color].border : 'border-l-transparent'
+                } ${isDragged ? 'opacity-40' : ''}`}
               >
                 <button
                   onClick={() => onOpenTask(task)}

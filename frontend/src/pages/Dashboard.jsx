@@ -220,7 +220,9 @@ export default function Dashboard() {
                   const done = task.status === 'completed';
                   const overdue = !done && task.due_date && task.due_date < todayStr;
                   return (
+                    
                     <li key={task.id} className="flex items-center gap-3 py-2.5">
+
                       <input
                         type="checkbox"
                         checked={done}
