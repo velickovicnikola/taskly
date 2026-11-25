@@ -16,26 +16,30 @@ const LIST_TITLE_BY_STATUS = { todo: 'to do', in_progress: 'in progress', comple
 // GET /api/tasks?status=todo&priority=high&list_id=1
 router.get('/', async (req, res) => {
   const { status, priority, list_id } = req.query;
-  const conditions = ['user_id = $1'];
+  const conditions = ['t.user_id = $1'];
   const params = [req.userId];
 
   if (status) {
     params.push(status);
-    conditions.push(`status = $${params.length}`);
+    conditions.push(`t.status = $${params.length}`);
   }
   if (priority) {
     params.push(priority);
-    conditions.push(`priority = $${params.length}`);
+    conditions.push(`t.priority = $${params.length}`);
   }
   if (list_id) {
     params.push(list_id);
-    conditions.push(`list_id = $${params.length}`);
+    conditions.push(`t.list_id = $${params.length}`);
   }
 
   try {
+    // board_id comes from the task's list (null for tasks that are not on a board)
     const result = await pool.query(
-      `SELECT * FROM tasks WHERE ${conditions.join(' AND ')}
-       ORDER BY position ASC, created_at DESC`,
+      `SELECT t.*, l.board_id
+       FROM tasks t
+       LEFT JOIN lists l ON t.list_id = l.id
+       WHERE ${conditions.join(' AND ')}
+       ORDER BY t.position ASC, t.created_at DESC`,
       params
     );
     res.json({ tasks: result.rows });

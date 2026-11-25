@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { fetchDashboard, addTask, updateTask, deleteTask } from '../store/tasksSlice';
 import Navbar from '../components/Navbar';
@@ -16,6 +16,43 @@ const PRIORITY_STYLES = {
   medium: 'bg-amber-100 text-amber-700',
   low: 'bg-slate-100 text-slate-600',
 };
+
+const PRIORITY_RANK = { high: 3, medium: 2, low: 1 };
+const STATUS_RANK = { in_progress: 0, todo: 1, completed: 2 };
+
+// Tasks without a due date always go last, in both directions
+function compareDue(a, b, direction) {
+  if (!a.due_date && !b.due_date) return 0;
+  if (!a.due_date) return 1;
+  if (!b.due_date) return -1;
+  return a.due_date.localeCompare(b.due_date) * direction;
+}
+
+const SORT_OPTIONS = [
+  { value: 'default', label: 'Default order', compare: null },
+  { value: 'due_asc', label: 'Due date (soonest)', compare: (a, b) => compareDue(a, b, 1) },
+  { value: 'due_desc', label: 'Due date (latest)', compare: (a, b) => compareDue(a, b, -1) },
+  {
+    value: 'priority_desc',
+    label: 'Priority (high first)',
+    compare: (a, b) => PRIORITY_RANK[b.priority] - PRIORITY_RANK[a.priority],
+  },
+  {
+    value: 'priority_asc',
+    label: 'Priority (low first)',
+    compare: (a, b) => PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority],
+  },
+  {
+    value: 'title',
+    label: 'Title (A-Z)',
+    compare: (a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }),
+  },
+  {
+    value: 'status',
+    label: 'Status',
+    compare: (a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status],
+  },
+];
 
 function StatCard({ label, value, color }) {
   return (
@@ -70,9 +107,11 @@ function ProgressBar({ value, color = 'bg-emerald-500' }) {
   );
 }
 
-function ProgressCard({ stats, boards }) {
-  const total = stats.todo + stats.in_progress + stats.completed;
-  const percent = total ? Math.round((stats.completed / total) * 100) : 0;
+// Overall progress follows the filtered tasks; the per-board rows always show every task of the board
+function ProgressCard({ tasks, boards }) {
+  const total = tasks.length;
+  const completed = tasks.filter((t) => t.status === 'completed').length;
+  const percent = total ? Math.round((completed / total) * 100) : 0;
 
   return (
     <div className="bg-white rounded-2xl shadow-sm p-5">
@@ -84,7 +123,7 @@ function ProgressCard({ stats, boards }) {
       </div>
       <ProgressBar value={percent} />
       <p className="text-xs text-slate-400 mt-1">
-        {stats.completed} of {total} tasks completed
+        {completed} of {total} tasks completed
       </p>
 
       {boards.length > 0 && (
@@ -113,11 +152,19 @@ function ProgressCard({ stats, boards }) {
 export default function Dashboard() {
   const dispatch = useDispatch();
   const user = useSelector((state) => state.auth.user);
-  const { tasks, stats, progress, loading, error } = useSelector((state) => state.tasks);
+  const { tasks, progress, loading, error } = useSelector((state) => state.tasks);
+
+  // New task form
   const [title, setTitle] = useState('');
   const [priority, setPriority] = useState('medium');
   const [dueDate, setDueDate] = useState('');
   const [openTask, setOpenTask] = useState(null);
+
+  // Filters and sorting
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [priorityFilter, setPriorityFilter] = useState('all');
+  const [sort, setSort] = useState('default');
 
   useEffect(() => {
     dispatch(fetchDashboard());
@@ -133,7 +180,50 @@ export default function Dashboard() {
   }
 
   const todayStr = today();
-  const upcoming = tasks
+
+  const visibleTasks = useMemo(() => {
+    const query = search.trim().toLowerCase();
+
+    const filtered = tasks.filter((t) => {
+      if (query && !t.title.toLowerCase().includes(query)) return false;
+      if (priorityFilter !== 'all' && t.priority !== priorityFilter) return false;
+
+      if (statusFilter === 'active') return t.status !== 'completed';
+      if (statusFilter === 'overdue') {
+        return t.status !== 'completed' && Boolean(t.due_date) && t.due_date < todayStr;
+      }
+      if (statusFilter !== 'all') return t.status === statusFilter;
+      return true;
+    });
+
+    const option = SORT_OPTIONS.find((o) => o.value === sort);
+    return option && option.compare ? [...filtered].sort(option.compare) : filtered;
+  }, [tasks, search, statusFilter, priorityFilter, sort, todayStr]);
+
+  // Counters, chart, progress and upcoming all follow the filtered tasks
+  const stats = useMemo(
+    () => ({
+      todo: visibleTasks.filter((t) => t.status === 'todo').length,
+      in_progress: visibleTasks.filter((t) => t.status === 'in_progress').length,
+      completed: visibleTasks.filter((t) => t.status === 'completed').length,
+      overdue: visibleTasks.filter(
+        (t) => t.status !== 'completed' && Boolean(t.due_date) && t.due_date < todayStr
+      ).length,
+    }),
+    [visibleTasks, todayStr]
+  );
+
+  const filtersActive =
+    search !== '' || statusFilter !== 'all' || priorityFilter !== 'all' || sort !== 'default';
+
+  function resetFilters() {
+    setSearch('');
+    setStatusFilter('all');
+    setPriorityFilter('all');
+    setSort('default');
+  }
+
+  const upcoming = visibleTasks
     .filter((t) => t.status !== 'completed' && t.due_date && t.due_date >= todayStr)
     .sort((a, b) => a.due_date.localeCompare(b.due_date))
     .slice(0, 3);
@@ -146,6 +236,8 @@ export default function Dashboard() {
 
   const inputClass =
     'rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500';
+  const filterClass =
+    'rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500';
 
   return (
     <div className="min-h-screen bg-slate-100">
@@ -211,17 +303,79 @@ export default function Dashboard() {
               </button>
             </form>
 
+            {/* Filters and sorting */}
+            <div className="flex flex-wrap items-center gap-2 mb-3 pb-3 border-b border-slate-100">
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search tasks..."
+                className={`${filterClass} flex-1 min-w-32`}
+              />
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className={filterClass}
+                title="Filter by status"
+              >
+                <option value="all">All statuses</option>
+                <option value="active">Not completed</option>
+                <option value="todo">To Do</option>
+                <option value="in_progress">In Progress</option>
+                <option value="completed">Completed</option>
+                <option value="overdue">Overdue</option>
+              </select>
+              <select
+                value={priorityFilter}
+                onChange={(e) => setPriorityFilter(e.target.value)}
+                className={filterClass}
+                title="Filter by priority"
+              >
+                <option value="all">All priorities</option>
+                <option value="high">High</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low</option>
+              </select>
+              <select
+                value={sort}
+                onChange={(e) => setSort(e.target.value)}
+                className={filterClass}
+                title="Sort tasks"
+              >
+                {SORT_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              {filtersActive && (
+                <button
+                  onClick={resetFilters}
+                  className="text-xs text-slate-400 hover:text-emerald-600"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+
+            {filtersActive && (
+              <p className="text-xs text-slate-400 mb-2">
+                Showing {visibleTasks.length} of {tasks.length} tasks. Counters, chart and overall
+                progress follow these filters.
+              </p>
+            )}
+
             {loading ? (
               <p className="text-sm text-slate-400">Loading...</p>
             ) : tasks.length === 0 ? (
               <p className="text-sm text-slate-400">No tasks yet. Add your first one above.</p>
+            ) : visibleTasks.length === 0 ? (
+              <p className="text-sm text-slate-400">No tasks match your filters.</p>
             ) : (
               <ul className="divide-y divide-slate-100">
-                {tasks.map((task) => {
+                {visibleTasks.map((task) => {
                   const done = task.status === 'completed';
                   const overdue = !done && task.due_date && task.due_date < todayStr;
                   return (
-                    
                     <li
                       key={task.id}
                       className={`flex items-center gap-3 py-2.5 px-2 -mx-2 rounded-lg ${
@@ -237,13 +391,13 @@ export default function Dashboard() {
                         className="h-4 w-4 accent-emerald-600"
                       />
                       <button
-                      onClick={() => setOpenTask(task)}
-                      className={`flex-1 text-left text-sm hover:text-emerald-600 ${
-                        done ? 'line-through text-slate-400' : 'text-slate-700'
-                      }`}
-                    >
-                      {task.title}
-                    </button>
+                        onClick={() => setOpenTask(task)}
+                        className={`flex-1 text-left text-sm hover:text-emerald-600 ${
+                          done ? 'line-through text-slate-400' : 'text-slate-700'
+                        }`}
+                      >
+                        {task.title}
+                      </button>
                       <span
                         className={`text-xs px-2 py-0.5 rounded-full ${PRIORITY_STYLES[task.priority]}`}
                       >
@@ -302,7 +456,7 @@ export default function Dashboard() {
               </div>
             </div>
 
-            <ProgressCard stats={stats} boards={progress} />
+            <ProgressCard tasks={visibleTasks} boards={progress} />
 
             <div className="bg-white rounded-2xl shadow-sm p-5">
               <h2 className="font-semibold text-slate-800 mb-3">Upcoming</h2>
