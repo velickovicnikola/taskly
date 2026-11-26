@@ -8,7 +8,16 @@ router.use(auth); // every route below requires a valid token
 const STATUSES = ['todo', 'in_progress', 'completed'];
 const PRIORITIES = ['low', 'medium', 'high'];
 const COLORS = ['red', 'orange', 'amber', 'green', 'blue', 'purple', 'pink'];
-const UPDATABLE_FIELDS = ['title', 'description', 'status', 'priority', 'due_date', 'list_id', 'color'];
+const UPDATABLE_FIELDS = [
+  'title',
+  'description',
+  'status',
+  'priority',
+  'due_date',
+  'list_id',
+  'color',
+  'auto_complete',
+];
 // Default list names that match each status (compared in lowercase)
 const LIST_TITLE_BY_STATUS = { todo: 'to do', in_progress: 'in progress', completed: 'done' };
 
@@ -239,6 +248,9 @@ router.put('/:id', async (req, res) => {
   }
   if (has('color') && body.color !== null && !COLORS.includes(body.color)) {
     return res.status(400).json({ message: 'Invalid color' });
+  }
+    if (has('auto_complete') && typeof body.auto_complete !== 'boolean') {
+    return res.status(400).json({ message: 'auto_complete must be true or false' });
   }
 
   // Field names come from the whitelist above, values are always passed as parameters

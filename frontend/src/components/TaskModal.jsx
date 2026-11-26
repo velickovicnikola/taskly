@@ -10,16 +10,22 @@ export default function TaskModal({ task, onClose, onChanged }) {
   const [color, setColor] = useState(task.color || null);
   const [description, setDescription] = useState(task.description || '');
   const [savedText, setSavedText] = useState(task.description || '');
+  const [autoComplete, setAutoComplete] = useState(Boolean(task.auto_complete));
+  const [completed, setCompleted] = useState(task.status === 'completed');
   const [items, setItems] = useState([]);
   const [newItem, setNewItem] = useState('');
   const [error, setError] = useState(null);
+  const [notice, setNotice] = useState(null);
 
+  // Loads the checklist and returns it (null if loading failed)
   const loadItems = useCallback(async () => {
     try {
       const data = await api(`/checklist?task_id=${task.id}`);
       setItems(data.items);
+      return data.items;
     } catch (err) {
       setError(err.message);
+      return null;
     }
   }, [task.id]);
 
@@ -79,10 +85,45 @@ export default function TaskModal({ task, onClose, onChanged }) {
     save({ color: value });
   }
 
+  // If auto-complete is on and every checklist item is done, mark the task as completed
+  // With auto-complete on: all items done -> Completed, an item open again -> back to In Progress
+  async function syncStatus(currentItems, enabled, allowRevert = true) {
+    if (!enabled || currentItems.length === 0) return;
+    const allDone = currentItems.every((item) => item.done);
+
+    if (allDone && !completed) {
+      if (await save({ status: 'completed' })) {
+        setCompleted(true);
+        setNotice('All checklist items are done, so the task was moved to Done.');
+      }
+    } else if (!allDone && completed && allowRevert) {
+      if (await save({ status: 'in_progress' })) {
+        setCompleted(false);
+        setNotice('A checklist item is open again, so the task was moved back to In Progress.');
+      }
+    }
+  }
+
+  async function changeAutoComplete(value) {
+    setAutoComplete(value);
+    setNotice(null);
+
+    const ok = await save({ auto_complete: value });
+    if (!ok) {
+      setAutoComplete(!value);
+      return;
+    }
+    // Turning it on when everything is already checked completes the task right away
+    if (value) await syncStatus(items, true, false);
+  }
+
+  // Runs a checklist change, reloads the list, then syncs the task status
   async function run(action) {
     try {
+      setNotice(null);
       await action();
-      await loadItems();
+      const fresh = await loadItems();
+      if (fresh) await syncStatus(fresh, autoComplete);
     } catch (err) {
       setError(err.message);
     }
@@ -136,6 +177,12 @@ export default function TaskModal({ task, onClose, onChanged }) {
 
         {error && (
           <div className="rounded-lg bg-red-50 text-red-700 text-sm px-3 py-2">{error}</div>
+        )}
+
+        {notice && (
+          <div className="rounded-lg bg-emerald-50 text-emerald-700 text-sm px-3 py-2">
+            {notice}
+          </div>
         )}
 
         {/* Details */}
@@ -271,6 +318,16 @@ export default function TaskModal({ task, onClose, onChanged }) {
               Add
             </button>
           </form>
+
+          <label className="flex items-start gap-2 text-sm text-slate-600 mt-4 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={autoComplete}
+              onChange={(e) => changeAutoComplete(e.target.checked)}
+              className="mt-0.5 h-4 w-4 accent-emerald-600"
+            />
+            <span>Move this task to Done automatically when all checklist items are completed</span>
+          </label>
         </div>
       </div>
     </div>
