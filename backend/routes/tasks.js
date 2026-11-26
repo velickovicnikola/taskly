@@ -12,6 +12,16 @@ const UPDATABLE_FIELDS = ['title', 'description', 'status', 'priority', 'due_dat
 // Default list names that match each status (compared in lowercase)
 const LIST_TITLE_BY_STATUS = { todo: 'to do', in_progress: 'in progress', completed: 'done' };
 
+// True only if the list is on a board that belongs to this user
+async function userOwnsList(listId, userId) {
+  const result = await pool.query(
+    `SELECT l.id FROM lists l
+     JOIN boards b ON l.board_id = b.id
+     WHERE l.id = $1 AND b.user_id = $2`,
+    [listId, userId]
+  );
+  return result.rows.length > 0;
+}
 
 // GET /api/tasks?status=todo&priority=high&list_id=1
 router.get('/', async (req, res) => {
@@ -105,6 +115,9 @@ router.post('/', async (req, res) => {
   }
 
   try {
+    if (list_id && !(await userOwnsList(list_id, req.userId))) {
+      return res.status(404).json({ message: 'List not found' });
+    }
     let targetListId = list_id || null;
     let targetStatus = status || null;
 
@@ -245,6 +258,12 @@ router.put('/:id', async (req, res) => {
   }
 
   try {
+    // null or '' removes the task from its list; any other value must be the user's own list
+    if (has('list_id') && body.list_id !== null && body.list_id !== '') {
+      if (!(await userOwnsList(body.list_id, req.userId))) {
+        return res.status(404).json({ message: 'List not found' });
+      }
+    }
     // Changing the status also moves the task to the matching list on its board
     if (has('status') && !has('list_id')) {
       const target = await pool.query(
