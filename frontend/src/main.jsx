@@ -6,6 +6,11 @@ import './index.css';
 import App from './App.jsx';
 import { store } from './store';
 import { applyTheme, getTheme } from './theme';
+import { setUnauthorizedHandler } from './api';
+import { logoutUser } from './store/authSlice';
+
+// Log the user out when the token is no longer valid
+setUnauthorizedHandler(() => store.dispatch(logoutUser()));
 
 applyTheme(getTheme()); // apply the saved theme before the first render
 createRoot(document.getElementById('root')).render(
