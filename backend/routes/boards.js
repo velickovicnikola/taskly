@@ -70,7 +70,7 @@ router.get('/:id', async (req, res) => {
       [req.params.id]
     );
     const tasks = await pool.query(
-      `SELECT t.* FROM tasks t
+      `SELECT t.*, l.board_id FROM tasks t
        JOIN lists l ON t.list_id = l.id
        WHERE l.board_id = $1 AND t.user_id = $2
        ORDER BY t.position ASC, t.created_at ASC`,

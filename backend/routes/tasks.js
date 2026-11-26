@@ -232,6 +232,57 @@ router.put('/:id/move', async (req, res) => {
   }
 });
 
+// PUT /api/tasks/:id/board  { board_id }  (null removes the task from its board)
+router.put('/:id/board', async (req, res) => {
+  const { board_id } = req.body;
+
+  try {
+    const taskResult = await pool.query(
+      'SELECT id, status FROM tasks WHERE id = $1 AND user_id = $2',
+      [req.params.id, req.userId]
+    );
+    if (taskResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Task not found' });
+    }
+    const task = taskResult.rows[0];
+
+    // No board: the task stays in My Tasks, but is not on any board
+    if (!board_id) {
+      await pool.query('UPDATE tasks SET list_id = NULL, position = 0 WHERE id = $1', [task.id]);
+      return res.json({ message: 'Task removed from its board' });
+    }
+
+    const lists = await pool.query(
+      `SELECT l.id, l.title FROM lists l
+       JOIN boards b ON l.board_id = b.id
+       WHERE l.board_id = $1 AND b.user_id = $2
+       ORDER BY l.position ASC, l.id ASC`,
+      [board_id, req.userId]
+    );
+    if (lists.rows.length === 0) {
+      return res.status(404).json({ message: 'Board not found or it has no lists' });
+    }
+
+    // Prefer the list that matches the task's status (To Do / In Progress / Done)
+    const wantedTitle = LIST_TITLE_BY_STATUS[task.status];
+    const target =
+      lists.rows.find((l) => l.title.trim().toLowerCase() === wantedTitle) || lists.rows[0];
+
+    await pool.query(
+      `UPDATE tasks SET
+         list_id = $1,
+         position = COALESCE((SELECT MAX(position) + 1 FROM tasks WHERE list_id = $1), 0)
+       WHERE id = $2`,
+      [target.id, task.id]
+    );
+
+    res.json({ message: 'Task moved to board', list_id: target.id });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // PUT /api/tasks/:id (partial update: only the fields that are sent change)
 router.put('/:id', async (req, res) => {
   const body = req.body;

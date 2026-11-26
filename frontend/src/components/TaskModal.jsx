@@ -10,6 +10,8 @@ export default function TaskModal({ task, onClose, onChanged }) {
   const [color, setColor] = useState(task.color || null);
   const [description, setDescription] = useState(task.description || '');
   const [savedText, setSavedText] = useState(task.description || '');
+  const [boardId, setBoardId] = useState(task.board_id ? String(task.board_id) : '');
+  const [boards, setBoards] = useState([]);
   const [autoComplete, setAutoComplete] = useState(Boolean(task.auto_complete));
   const [completed, setCompleted] = useState(task.status === 'completed');
   const [items, setItems] = useState([]);
@@ -32,6 +34,19 @@ export default function TaskModal({ task, onClose, onChanged }) {
   useEffect(() => {
     loadItems();
   }, [loadItems]);
+
+  // Boards for the "Board" dropdown
+  useEffect(() => {
+    let cancelled = false;
+    api('/boards')
+      .then((data) => {
+        if (!cancelled) setBoards(data.boards);
+      })
+      .catch((err) => setError(err.message));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Close with the Escape key
   useEffect(() => {
@@ -85,7 +100,25 @@ export default function TaskModal({ task, onClose, onChanged }) {
     save({ color: value });
   }
 
-  // If auto-complete is on and every checklist item is done, mark the task as completed
+  // Moves the task to another board (or removes it from its board when value is '')
+  async function changeBoard(value) {
+    const previous = boardId;
+    setBoardId(value);
+    setNotice(null);
+
+    try {
+      await api(`/tasks/${task.id}/board`, {
+        method: 'PUT',
+        body: { board_id: value ? Number(value) : null },
+      });
+      setError(null);
+      onChanged();
+    } catch (err) {
+      setBoardId(previous);
+      setError(err.message);
+    }
+  }
+
   // With auto-complete on: all items done -> Completed, an item open again -> back to In Progress
   async function syncStatus(currentItems, enabled, allowRevert = true) {
     if (!enabled || currentItems.length === 0) return;
@@ -184,6 +217,23 @@ export default function TaskModal({ task, onClose, onChanged }) {
             {notice}
           </div>
         )}
+
+        {/* Board */}
+        <div>
+          <label className="block text-sm font-medium text-slate-600 mb-1">Board</label>
+          <select
+            value={boardId}
+            onChange={(e) => changeBoard(e.target.value)}
+            className={fieldClass}
+          >
+            <option value="">No board</option>
+            {boards.map((board) => (
+              <option key={board.id} value={String(board.id)}>
+                {board.title}
+              </option>
+            ))}
+          </select>
+        </div>
 
         {/* Details */}
         <div className="grid sm:grid-cols-2 gap-4">
