@@ -90,9 +90,9 @@ router.get('/progress', async (req, res) => {
   }
 });
 
-// POST /api/tasks
+// POST /api/tasks  (list_id places the task in a list; board_id uses the first list of that board)
 router.post('/', async (req, res) => {
-  const { title, description, status, priority, due_date, list_id } = req.body;
+  const { title, description, status, priority, due_date, list_id, board_id } = req.body;
 
   if (!title || !title.trim()) {
     return res.status(400).json({ message: 'Title is required' });
@@ -105,13 +105,37 @@ router.post('/', async (req, res) => {
   }
 
   try {
+    let targetListId = list_id || null;
+    let targetStatus = status || null;
+
+    // Board given without a list: use the first list of that board
+    if (!targetListId && board_id) {
+      const first = await pool.query(
+        `SELECT l.id, l.title FROM lists l
+         JOIN boards b ON l.board_id = b.id
+         WHERE l.board_id = $1 AND b.user_id = $2
+         ORDER BY l.position ASC, l.id ASC
+         LIMIT 1`,
+        [board_id, req.userId]
+      );
+      if (first.rows.length === 0) {
+        return res.status(404).json({ message: 'Board not found or it has no lists' });
+      }
+
+      targetListId = first.rows[0].id;
+      if (!targetStatus) {
+        const listTitle = first.rows[0].title.trim().toLowerCase();
+        targetStatus = STATUSES.find((s) => LIST_TITLE_BY_STATUS[s] === listTitle) || null;
+      }
+    }
+
     // New tasks go to the end of their list (position = highest position + 1)
     const result = await pool.query(
       `INSERT INTO tasks (user_id, list_id, title, description, status, priority, due_date, position)
        VALUES ($1, $2, $3, $4, COALESCE($5, 'todo'), COALESCE($6, 'medium'), $7,
          COALESCE((SELECT MAX(position) + 1 FROM tasks WHERE list_id = $2), 0))
        RETURNING *`,
-      [req.userId, list_id || null, title.trim(), description || null, status || null, priority || null, due_date || null]
+      [req.userId, targetListId, title.trim(), description || null, targetStatus, priority || null, due_date || null]
     );
     res.status(201).json({ task: result.rows[0] });
   } catch (err) {

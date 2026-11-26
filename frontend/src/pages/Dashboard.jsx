@@ -11,6 +11,25 @@ const today = () => new Date().toLocaleDateString('sv-SE');
 const formatDate = (value) =>
   new Date(`${value}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 
+const BOARD_KEY = 'taskly_dashboard_board';
+
+// Selected board is 'all', 'none' (tasks without a board) or a board id as text
+function loadSavedBoard() {
+  try {
+    return localStorage.getItem(BOARD_KEY) || 'all';
+  } catch {
+    return 'all';
+  }
+}
+
+function saveBoard(value) {
+  try {
+    localStorage.setItem(BOARD_KEY, value);
+  } catch {
+    // storage not available, the choice just won't be remembered
+  }
+}
+
 const PRIORITY_STYLES = {
   high: 'bg-red-100 text-red-700',
   medium: 'bg-amber-100 text-amber-700',
@@ -115,7 +134,7 @@ function ProgressBar({ value, color = 'bg-emerald-500' }) {
   );
 }
 
-// Overall progress follows the filtered tasks; the per-board rows always show every task of the board
+// Overall progress follows the tasks it receives; the per-board rows always show every task of the board
 function ProgressCard({ tasks, boards }) {
   const total = tasks.length;
   const completed = tasks.filter((t) => t.status === 'completed').length;
@@ -161,6 +180,7 @@ export default function Dashboard() {
   const dispatch = useDispatch();
   const user = useSelector((state) => state.auth.user);
   const { tasks, progress, loading, error } = useSelector((state) => state.tasks);
+  const boards = progress; // [{ id, title, total, completed }]
 
   // New task form
   const [title, setTitle] = useState('');
@@ -168,7 +188,8 @@ export default function Dashboard() {
   const [dueDate, setDueDate] = useState('');
   const [openTask, setOpenTask] = useState(null);
 
-  // Filters and sorting
+  // Board selection, filters and sorting
+  const [boardId, setBoardId] = useState(loadSavedBoard);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
@@ -178,10 +199,28 @@ export default function Dashboard() {
     dispatch(fetchDashboard());
   }, [dispatch]);
 
+  // A remembered board that no longer exists falls back to "all"
+  const selectedBoard =
+    loading || boardId === 'all' || boardId === 'none' || boards.some((b) => String(b.id) === boardId)
+      ? boardId
+      : 'all';
+
+  function changeBoard(value) {
+    setBoardId(value);
+    saveBoard(value);
+  }
+
   function handleAdd(e) {
     e.preventDefault();
     if (!title.trim()) return;
-    dispatch(addTask({ title, priority, due_date: dueDate || null }));
+
+    const newTask = { title, priority, due_date: dueDate || null };
+    // With a board selected, the task goes to that board's first list
+    if (selectedBoard !== 'all' && selectedBoard !== 'none') {
+      newTask.board_id = Number(selectedBoard);
+    }
+
+    dispatch(addTask(newTask));
     setTitle('');
     setDueDate('');
     setPriority('medium');
@@ -189,10 +228,18 @@ export default function Dashboard() {
 
   const todayStr = today();
 
+  // Step 1: tasks of the selected board
+  const boardTasks = useMemo(() => {
+    if (selectedBoard === 'all') return tasks;
+    if (selectedBoard === 'none') return tasks.filter((t) => !t.board_id);
+    return tasks.filter((t) => t.board_id === Number(selectedBoard));
+  }, [tasks, selectedBoard]);
+
+  // Step 2: filters and sorting on top of that
   const visibleTasks = useMemo(() => {
     const query = search.trim().toLowerCase();
 
-    const filtered = tasks.filter((t) => {
+    const filtered = boardTasks.filter((t) => {
       if (query && !t.title.toLowerCase().includes(query)) return false;
       if (priorityFilter !== 'all' && t.priority !== priorityFilter) return false;
 
@@ -206,9 +253,9 @@ export default function Dashboard() {
 
     const option = SORT_OPTIONS.find((o) => o.value === sort);
     return option && option.compare ? [...filtered].sort(option.compare) : filtered;
-  }, [tasks, search, statusFilter, priorityFilter, sort, todayStr]);
+  }, [boardTasks, search, statusFilter, priorityFilter, sort, todayStr]);
 
-  // Counters, chart, progress and upcoming all follow the filtered tasks
+  // Counters, chart, overall progress and upcoming all follow the visible tasks
   const stats = useMemo(
     () => ({
       todo: visibleTasks.filter((t) => t.status === 'todo').length,
@@ -259,9 +306,31 @@ export default function Dashboard() {
       )}
       <div className="max-w-5xl mx-auto p-6 space-y-6">
         {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">Welcome back, {user.name}!</h1>
-          <p className="text-sm text-slate-500">Here's what's happening today.</p>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-800">Welcome back, {user.name}!</h1>
+            <p className="text-sm text-slate-500">Here's what's happening today.</p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label htmlFor="board-select" className="text-sm text-slate-500">
+              Board
+            </label>
+            <select
+              id="board-select"
+              value={selectedBoard}
+              onChange={(e) => changeBoard(e.target.value)}
+              className={`${inputClass} bg-white min-w-40`}
+            >
+              <option value="all">All tasks</option>
+              <option value="none">Without a board</option>
+              {boards.map((board) => (
+                <option key={board.id} value={String(board.id)}>
+                  {board.title}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {error && (
@@ -365,10 +434,11 @@ export default function Dashboard() {
               )}
             </div>
 
-            {filtersActive && (
+            {(filtersActive || selectedBoard !== 'all') && (
               <p className="text-xs text-slate-400 mb-2">
-                Showing {visibleTasks.length} of {tasks.length} tasks. Counters, chart and overall
-                progress follow these filters.
+                Showing {visibleTasks.length} of {boardTasks.length} tasks
+                {selectedBoard !== 'all' && ' on this selection'}. Counters, chart and overall
+                progress follow the selected board and filters.
               </p>
             )}
 
@@ -376,6 +446,8 @@ export default function Dashboard() {
               <p className="text-sm text-slate-400">Loading...</p>
             ) : tasks.length === 0 ? (
               <p className="text-sm text-slate-400">No tasks yet. Add your first one above.</p>
+            ) : boardTasks.length === 0 ? (
+              <p className="text-sm text-slate-400">There are no tasks here yet.</p>
             ) : visibleTasks.length === 0 ? (
               <p className="text-sm text-slate-400">No tasks match your filters.</p>
             ) : (
@@ -464,7 +536,7 @@ export default function Dashboard() {
               </div>
             </div>
 
-            <ProgressCard tasks={visibleTasks} boards={progress} />
+            <ProgressCard tasks={visibleTasks} boards={boards} />
 
             <div className="bg-white rounded-2xl shadow-sm p-5">
               <h2 className="font-semibold text-slate-800 mb-3">Upcoming</h2>
