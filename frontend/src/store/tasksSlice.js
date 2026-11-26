@@ -1,5 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { api } from '../api';
+import { logout } from './authSlice';
 
 // Loads tasks, dashboard counters and per-board progress together
 export const fetchDashboard = createAsyncThunk(
@@ -55,15 +56,17 @@ export const deleteTask = createAsyncThunk(
   }
 );
 
+const initialState = {
+  tasks: [],
+  stats: { todo: 0, in_progress: 0, completed: 0, overdue: 0 },
+  progress: [],
+  loading: true,
+  error: null,
+};
+
 const tasksSlice = createSlice({
   name: 'tasks',
-  initialState: {
-    tasks: [],
-    stats: { todo: 0, in_progress: 0, completed: 0, overdue: 0 },
-    progress: [],
-    loading: true,
-    error: null,
-  },
+  initialState,
   reducers: {},
   extraReducers: (builder) => {
     builder
@@ -80,7 +83,9 @@ const tasksSlice = createSlice({
       })
       .addCase(addTask.rejected, (state, action) => { state.error = action.payload; })
       .addCase(updateTask.rejected, (state, action) => { state.error = action.payload; })
-      .addCase(deleteTask.rejected, (state, action) => { state.error = action.payload; });
+      .addCase(deleteTask.rejected, (state, action) => { state.error = action.payload; })
+      // Clear the previous user's data on logout
+      .addCase(logout, () => initialState);
   },
 });
 
