@@ -199,13 +199,15 @@ export default function Board() {
     load();
   }, [load]);
 
-  // Runs an API action, then reloads the board
-  async function run(action) {
+  // Runs an API action, then reloads the board. If the action fails, undoes the optimistic update
+  async function run(action, rollback) {
     try {
       await action();
       await load();
     } catch (err) {
-      setError(err.message);
+      if (rollback) rollback();
+      await load(); // sync with the server if it is reachable
+      setError(err.message); // set last, because a successful load() clears the error
     }
   }
 
@@ -230,6 +232,8 @@ export default function Board() {
 
   // Moves a task to a list at an index: updates the screen immediately, then saves
   function moveTaskTo(taskId, targetList, index) {
+    const previousBoard = board;
+
     setBoard((prev) => {
       const moving = prev.lists.flatMap((l) => l.tasks).find((t) => t.id === taskId);
       if (!moving) return prev;
@@ -248,11 +252,13 @@ export default function Board() {
       return { ...prev, lists };
     });
 
-    run(() =>
-      api(`/tasks/${taskId}/move`, {
-        method: 'PUT',
-        body: { list_id: targetList.id, index, status: statusFor(targetList) },
-      })
+    run(
+      () =>
+        api(`/tasks/${taskId}/move`, {
+          method: 'PUT',
+          body: { list_id: targetList.id, index, status: statusFor(targetList) },
+        }),
+      () => setBoard(previousBoard)
     );
   }
 
