@@ -10,7 +10,8 @@ const listRoutes = require('./routes/lists');
 const checklistRoutes = require('./routes/checklist');
 
 const app = express();
-app.use(cors());
+// Only this frontend origin may read API responses from a browser
+app.use(cors({ origin: process.env.CLIENT_URL || 'http://localhost:5173' }));
 app.use(express.json());
 
 app.use('/api/auth', authRoutes);
